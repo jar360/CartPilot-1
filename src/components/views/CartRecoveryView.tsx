@@ -19,6 +19,7 @@ interface CartRecoveryViewProps {
   carts: AbandonedCart[];
   customers: Customer[];
   globalSearch: string;
+  onClearGlobalSearch: () => void;
   onSelectCart: (cartId: string) => void;
   onSelectCustomer: (customerId: string) => void;
   onQuickApprove: (cartId: string) => void;
@@ -30,6 +31,7 @@ export const CartRecoveryView: React.FC<CartRecoveryViewProps> = ({
   carts,
   customers,
   globalSearch,
+  onClearGlobalSearch,
   onSelectCart,
   onSelectCustomer,
   onQuickApprove,
@@ -148,6 +150,7 @@ export const CartRecoveryView: React.FC<CartRecoveryViewProps> = ({
           onAction={() => {
             setStatusFilter('All');
             setLocalSearch('');
+            onClearGlobalSearch();
           }}
         />
       ) : (

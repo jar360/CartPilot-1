@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   ArrowUpRight,
   Mail,
@@ -34,12 +34,26 @@ export const CustomerProfileDrawer: React.FC<CustomerProfileDrawerProps> = ({
   onClose,
   onOpenCart,
 }) => {
+  useEffect(() => {
+    if (!customer) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [customer, onClose]);
+
   if (!customer) return null;
 
   const items = cart ? cart.items : customer.cartItems;
   const cartValueInr = getCartTotalInr(items);
   const abandonedHours = cart ? cart.abandonedHoursAgo : customer.abandonedHoursAgo;
-  const scoreBreakdown = calculatePriorityScore(customer, cartValueInr, abandonedHours);
+  const scoreBreakdown = calculatePriorityScore(
+    customer,
+    cartValueInr,
+    abandonedHours,
+    cart?.recoveryStatus
+  );
 
   return (
     <div

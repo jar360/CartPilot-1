@@ -871,7 +871,7 @@ export const DAILY_ACTIVITY_SERIES: DailyActivityMetric[] = [
     dateLabel: 'Nov 16',
     activeCustomers: 67,
     checkoutStarts: 31,
-    abandonedValueInr: 28191,
+    abandonedValueInr: 28187,
     recoveredValueInr: 7249,
     emailOpenRatePct: 54,
   },

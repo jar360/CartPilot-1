@@ -25,6 +25,7 @@ interface TopBarProps {
   customers: Customer[];
   carts: AbandonedCart[];
   notifications: NotificationItem[];
+  onMarkNotificationRead: (notificationId: string) => void;
   onMarkAllNotificationsRead: () => void;
   onSelectCustomer: (customerId: string) => void;
   onSelectCart: (cartId: string) => void;
@@ -48,6 +49,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   customers,
   carts,
   notifications,
+  onMarkNotificationRead,
   onMarkAllNotificationsRead,
   onSelectCustomer,
   onSelectCart,
@@ -270,6 +272,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                       key={item.id}
                       type="button"
                       onClick={() => {
+                        onMarkNotificationRead(item.id);
                         if (item.targetId && item.targetSection === 'recovery') {
                           onSelectCart(item.targetId);
                         } else {

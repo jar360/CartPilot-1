@@ -68,7 +68,16 @@ export const CartDetailDrawer: React.FC<CartDetailDrawerProps> = ({
       setRejectionNote('');
       setFeedbackBanner(null);
     }
-  }, [cart?.id, cart?.recoveryStatus, cart?.generatedMessage]);
+  }, [cart?.id]);
+
+  useEffect(() => {
+    if (!cart) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [cart, onClose]);
 
   if (!cart || !customer) return null;
 
@@ -76,7 +85,8 @@ export const CartDetailDrawer: React.FC<CartDetailDrawerProps> = ({
   const scoreBreakdown = calculatePriorityScore(
     customer,
     totalInr,
-    cart.abandonedHoursAgo
+    cart.abandonedHoursAgo,
+    cart.recoveryStatus
   );
 
   const handleGenerateDraft = async () => {

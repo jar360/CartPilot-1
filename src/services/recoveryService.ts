@@ -2,6 +2,7 @@ import { INITIAL_ABANDONED_CARTS, INITIAL_CUSTOMERS } from '../data/mockData';
 import {
   AbandonedCart,
   Customer,
+  DailyActivityMetric,
   MessageChannel,
   MessageTone,
   PriorityScoreBreakdown,
@@ -91,9 +92,12 @@ export interface DashboardMetricsSummary {
   totalCartsCount: number;
   potentialRecoveryValueInr: number;
   recoveredValueInr: number;
+  totalTrackedCartValueInr: number;
+  avgActiveAbandonedValueInr: number;
   highPriorityCustomersCount: number;
   awaitingApprovalCount: number;
   recoveryRatePct: number;
+  meanActivePriorityScore: number;
 }
 
 export function computeDashboardMetrics(
@@ -113,18 +117,47 @@ export function computeDashboardMetrics(
     0
   );
 
+  const totalTrackedCartValueInr = potentialRecoveryValueInr + recoveredValueInr;
+
+  const avgActiveAbandonedValueInr =
+    activeCarts.length > 0
+      ? Math.round(potentialRecoveryValueInr / activeCarts.length)
+      : 0;
+
   const cartByCustomerId = new Map<string, AbandonedCart>();
   carts.forEach((c) => cartByCustomerId.set(c.customerId, c));
 
-  const highPriorityCustomersCount = customers.filter((customer) => {
+  const customerScores = customers.map((customer) => {
     const cart = cartByCustomerId.get(customer.id);
     const val = cart ? getCartTotalInr(cart.items) : getCartTotalInr(customer.cartItems);
     const hours = cart ? cart.abandonedHoursAgo : customer.abandonedHoursAgo;
-    if (cart?.recoveryStatus === 'Recovered' || customer.purchaseStatus === 'Converted') {
-      return false;
-    }
-    return calculatePriorityScore(customer, val, hours).level === 'High';
-  }).length;
+    const breakdown = calculatePriorityScore(
+      customer,
+      val,
+      hours,
+      cart?.recoveryStatus
+    );
+    const isActiveOpen =
+      cart !== undefined
+        ? cart.recoveryStatus !== 'Recovered'
+        : customer.purchaseStatus !== 'Recovered' &&
+          customer.purchaseStatus !== 'Converted' &&
+          val > 0;
+    return { breakdown, isActiveOpen };
+  });
+
+  const highPriorityCustomersCount = customerScores.filter(
+    (entry) => entry.breakdown.level === 'High'
+  ).length;
+
+  const activeOpenScores = customerScores.filter((entry) => entry.isActiveOpen);
+  const meanActivePriorityScore =
+    activeOpenScores.length > 0
+      ? Math.round(
+          activeOpenScores.reduce((sum, entry) => sum + entry.breakdown.score, 0) /
+            activeOpenScores.length
+        )
+      : 0;
 
   const awaitingApprovalCount = carts.filter(
     (c) => c.recoveryStatus === 'Awaiting approval'
@@ -140,10 +173,32 @@ export function computeDashboardMetrics(
     totalCartsCount: carts.length,
     potentialRecoveryValueInr,
     recoveredValueInr,
+    totalTrackedCartValueInr,
+    avgActiveAbandonedValueInr,
     highPriorityCustomersCount,
     awaitingApprovalCount,
     recoveryRatePct,
+    meanActivePriorityScore,
   };
+}
+
+/**
+ * Syncs the final day in the 7-day trend series with live active/recovered cart totals
+ * so cart recovery actions immediately reflect on Overview & Analytics charts.
+ */
+export function buildLiveActivitySeries(
+  baseSeries: DailyActivityMetric[],
+  metrics: DashboardMetricsSummary
+): DailyActivityMetric[] {
+  if (baseSeries.length === 0) return [];
+  return baseSeries.map((point, index) => {
+    if (index !== baseSeries.length - 1) return point;
+    return {
+      ...point,
+      abandonedValueInr: metrics.potentialRecoveryValueInr,
+      recoveredValueInr: metrics.recoveredValueInr,
+    };
+  });
 }
 
 export function computeRecoveryStatusDistribution(carts: AbandonedCart[]) {
@@ -185,6 +240,30 @@ export interface PersistedCartPilotState {
   readNotificationIds: string[];
 }
 
+function isValidCustomerRecord(c: unknown): c is Customer {
+  if (!c || typeof c !== 'object') return false;
+  const obj = c as Partial<Customer>;
+  return (
+    typeof obj.id === 'string' &&
+    typeof obj.name === 'string' &&
+    typeof obj.email === 'string' &&
+    Array.isArray(obj.cartItems) &&
+    Array.isArray(obj.interactions) &&
+    Array.isArray(obj.activityTimeline)
+  );
+}
+
+function isValidCartRecord(c: unknown): c is AbandonedCart {
+  if (!c || typeof c !== 'object') return false;
+  const obj = c as Partial<AbandonedCart>;
+  return (
+    typeof obj.id === 'string' &&
+    typeof obj.customerId === 'string' &&
+    Array.isArray(obj.items) &&
+    typeof obj.recoveryStatus === 'string'
+  );
+}
+
 export function loadPersistedState(): PersistedCartPilotState {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -196,14 +275,19 @@ export function loadPersistedState(): PersistedCartPilotState {
       };
     }
     const parsed = JSON.parse(raw) as Partial<PersistedCartPilotState>;
-    if (!Array.isArray(parsed.customers) || !Array.isArray(parsed.carts)) {
+    if (
+      !Array.isArray(parsed.customers) ||
+      !Array.isArray(parsed.carts) ||
+      !parsed.customers.every(isValidCustomerRecord) ||
+      !parsed.carts.every(isValidCartRecord)
+    ) {
       throw new Error('Invalid persisted shape');
     }
     return {
       customers: parsed.customers,
       carts: parsed.carts,
       readNotificationIds: Array.isArray(parsed.readNotificationIds)
-        ? parsed.readNotificationIds
+        ? parsed.readNotificationIds.filter((id): id is string => typeof id === 'string')
         : [],
     };
   } catch {

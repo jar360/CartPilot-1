@@ -14,11 +14,13 @@ import {
   NavSection,
 } from '../../types/cartpilot';
 import {
+  buildLiveActivitySeries,
   computeDashboardMetrics,
   computeRecoveryStatusDistribution,
   formatInr,
 } from '../../services/recoveryService';
 import {
+  PRIORITY_THRESHOLDS,
   calculatePriorityScore,
   formatAbandonmentDuration,
   getCartTotalInr,
@@ -51,6 +53,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   onSelectCart,
 }) => {
   const metrics = computeDashboardMetrics(customers, carts);
+  const liveActivitySeries = buildLiveActivitySeries(activitySeries, metrics);
   const statusDistribution = computeRecoveryStatusDistribution(carts);
   const customerMap = new Map(customers.map((c) => [c.id, c]));
 
@@ -60,7 +63,12 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       const customer = customerMap.get(cart.customerId);
       if (!customer) return null;
       const valueInr = getCartTotalInr(cart.items);
-      const score = calculatePriorityScore(customer, valueInr, cart.abandonedHoursAgo);
+      const score = calculatePriorityScore(
+        customer,
+        valueInr,
+        cart.abandonedHoursAgo,
+        cart.recoveryStatus
+      );
       return { cart, customer, valueInr, score };
     })
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
@@ -134,14 +142,14 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           className="text-left bg-white border border-slate-200 rounded-xl p-5 hover:border-slate-300 transition-colors"
         >
           <div className="flex items-center justify-between text-slate-500">
-            <span className="text-xs font-medium">Abandoned Carts</span>
+            <span className="text-xs font-medium">Active Abandoned Carts</span>
             <ShoppingCart className="w-4 h-4 text-indigo-500" />
           </div>
           <p className="font-mono text-2xl font-semibold text-slate-900 tabular-nums mt-2">
             {metrics.activeAbandonedCartsCount}
           </p>
           <p className="text-xs text-slate-500 mt-1.5 tabular-nums">
-            {metrics.recoveredCartsCount} recovered · {metrics.awaitingApprovalCount} awaiting approval
+            {metrics.totalCartsCount} total tracked ({metrics.recoveredCartsCount} recovered · {metrics.awaitingApprovalCount} awaiting approval)
           </p>
         </button>
 
@@ -175,7 +183,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             {metrics.highPriorityCustomersCount}
           </p>
           <p className="text-xs text-slate-500 mt-1.5">
-            Deterministic score ≥ 72/100
+            Active score ≥ {PRIORITY_THRESHOLDS.HIGH}/100
           </p>
         </button>
       </div>
@@ -189,7 +197,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 Customer Activity
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Daily active shoppers vs. checkout initiations (7-day window)
+                Daily active shoppers vs. checkout initiations (simulated 7-day baseline)
               </p>
             </div>
             <button
@@ -201,7 +209,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               <ArrowUpRight className="w-3.5 h-3.5" />
             </button>
           </div>
-          <CustomerActivityChart data={activitySeries} />
+          <CustomerActivityChart data={liveActivitySeries} />
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-5">
@@ -211,14 +219,14 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 Abandoned Cart Trend
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Daily abandoned basket value vs. recovered revenue in INR
+                6-day baseline + live today snapshot in INR
               </p>
             </div>
             <span className="font-mono text-xs text-slate-500 tabular-nums whitespace-nowrap">
               {metrics.recoveryRatePct}% rate
             </span>
           </div>
-          <AbandonedCartTrendChart data={activitySeries} />
+          <AbandonedCartTrendChart data={liveActivitySeries} />
         </div>
       </div>
 
@@ -318,7 +326,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                   Recovery Status Overview
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Pipeline breakdown across {metrics.totalCartsCount} tracked carts
+                  All {metrics.totalCartsCount} tracked carts ({metrics.activeAbandonedCartsCount} active + {metrics.recoveredCartsCount} recovered)
                 </p>
               </div>
             </div>

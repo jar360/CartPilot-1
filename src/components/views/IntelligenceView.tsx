@@ -7,6 +7,7 @@ import {
   PurchaseIntent,
 } from '../../types/cartpilot';
 import {
+  PRIORITY_THRESHOLDS,
   calculatePriorityScore,
   formatAbandonmentDuration,
   getCartTotalInr,
@@ -47,7 +48,12 @@ export const IntelligenceView: React.FC<IntelligenceViewProps> = ({
           ? getCartTotalInr(cart.items)
           : getCartTotalInr(customer.cartItems);
         const abandonedHours = cart ? cart.abandonedHoursAgo : customer.abandonedHoursAgo;
-        const breakdown = calculatePriorityScore(customer, cartValueInr, abandonedHours);
+        const breakdown = calculatePriorityScore(
+          customer,
+          cartValueInr,
+          abandonedHours,
+          cart?.recoveryStatus
+        );
         return {
           customer,
           cart,
@@ -73,7 +79,7 @@ export const IntelligenceView: React.FC<IntelligenceViewProps> = ({
       const cart = cartByCustomer.get(customer.id);
       const val = cart ? getCartTotalInr(cart.items) : getCartTotalInr(customer.cartItems);
       const hrs = cart ? cart.abandonedHoursAgo : customer.abandonedHoursAgo;
-      return calculatePriorityScore(customer, val, hrs).level;
+      return calculatePriorityScore(customer, val, hrs, cart?.recoveryStatus).level;
     });
     return {
       High: all.filter((l) => l === 'High').length,
@@ -106,14 +112,14 @@ export const IntelligenceView: React.FC<IntelligenceViewProps> = ({
             <p>
               Scores are computed transparently from <strong className="text-slate-800">Cart Value (0–35 pts)</strong>,{' '}
               <strong className="text-slate-800">Purchase Intent & Funnel Depth (0–40 pts)</strong>, and{' '}
-              <strong className="text-slate-800">Abandonment Window Recency (0–25 pts)</strong>. These are rule-based demo scores, not live AI predictions.
+              <strong className="text-slate-800">Abandonment Window Recency (0–25 pts)</strong>. Resolved/recovered records score 0/100 so active carts stay prioritised. These are rule-based demo scores, not live AI predictions.
             </p>
           </div>
         </div>
         <div className="flex items-center gap-4 text-xs tabular-nums shrink-0 border-t md:border-t-0 pt-3 md:pt-0 border-slate-100">
-          <span>High <strong className="font-mono text-indigo-700">≥72</strong></span>
-          <span>Medium <strong className="font-mono text-amber-700">46–71</strong></span>
-          <span>Low <strong className="font-mono text-slate-600">&lt;46</strong></span>
+          <span>High <strong className="font-mono text-indigo-700">≥{PRIORITY_THRESHOLDS.HIGH}</strong></span>
+          <span>Medium <strong className="font-mono text-amber-700">{PRIORITY_THRESHOLDS.MEDIUM}–{PRIORITY_THRESHOLDS.HIGH - 1}</strong></span>
+          <span>Low <strong className="font-mono text-slate-600">&lt;{PRIORITY_THRESHOLDS.MEDIUM}</strong></span>
         </div>
       </div>
 

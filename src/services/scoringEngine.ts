@@ -3,7 +3,19 @@ import {
   PriorityLevel,
   PriorityScoreBreakdown,
   PurchaseIntent,
+  RecoveryStatus,
 } from '../types/cartpilot';
+
+export const PRIORITY_THRESHOLDS = {
+  HIGH: 72,
+  MEDIUM: 46,
+} as const;
+
+export const SCORE_COMPONENT_MAX = {
+  CART_VALUE: 35,
+  INTENT_AND_DEPTH: 40,
+  RECENCY: 25,
+} as const;
 
 export function getCartTotalInr(items: { unitPriceInr: number; quantity: number }[]): number {
   return items.reduce((sum, item) => sum + item.unitPriceInr * item.quantity, 0);
@@ -13,16 +25,17 @@ export function formatAbandonmentDuration(hours: number | null): string {
   if (hours === null) {
     return 'No active abandonment';
   }
-  if (hours < 1) {
-    const mins = Math.max(15, Math.round(hours * 60));
+  const safeHours = Math.max(0, hours);
+  if (safeHours < 1) {
+    const mins = Math.max(15, Math.round(safeHours * 60));
     return `${mins} mins ago`;
   }
-  if (hours < 24) {
-    const rounded = Math.round(hours);
+  if (safeHours < 24) {
+    const rounded = Math.round(safeHours);
     return `${rounded} ${rounded === 1 ? 'hour' : 'hours'} ago`;
   }
-  const days = Math.floor(hours / 24);
-  const remHours = Math.round(hours % 24);
+  const days = Math.floor(safeHours / 24);
+  const remHours = Math.round(safeHours % 24);
   if (remHours === 0) {
     return `${days} ${days === 1 ? 'day' : 'days'} ago`;
   }
@@ -33,21 +46,58 @@ export function formatAbandonmentDuration(hours: number | null): string {
  * Deterministic rule-based priority scoring engine (0–100).
  * Combines Cart Value (0–35 pts), Purchase Intent & Funnel Depth (0–40 pts),
  * and Abandonment Window Recency (0–25 pts).
+ *
+ * Resolved records (Recovered carts or Converted orders with no active cart)
+ * are assigned 0/100 ('Low' active recovery priority) so they are never queued
+ * ahead of open abandonment opportunities.
  */
 export function calculatePriorityScore(
   customer: Customer,
   overrideCartValueInr?: number,
-  overrideAbandonedHours?: number | null
+  overrideAbandonedHours?: number | null,
+  recoveryStatus?: RecoveryStatus
 ): PriorityScoreBreakdown {
-  const cartValue =
+  const cartValue = Math.max(
+    0,
     overrideCartValueInr !== undefined
       ? overrideCartValueInr
-      : getCartTotalInr(customer.cartItems);
+      : getCartTotalInr(customer.cartItems)
+  );
 
   const abandonedHours =
     overrideAbandonedHours !== undefined
       ? overrideAbandonedHours
       : customer.abandonedHoursAgo;
+
+  const isRecovered =
+    recoveryStatus === 'Recovered' ||
+    (!recoveryStatus && customer.purchaseStatus === 'Recovered');
+  const isConverted = customer.purchaseStatus === 'Converted' && cartValue === 0;
+
+  if (isRecovered || isConverted || cartValue === 0) {
+    const reasonText = isRecovered
+      ? `Cart already recovered (₹${cartValue.toLocaleString('en-IN')}) — no active recovery outreach required.`
+      : isConverted
+      ? 'Customer completed direct checkout — no abandoned cart open.'
+      : 'No active cart value on record (₹0).';
+
+    return {
+      score: 0,
+      level: 'Low',
+      components: {
+        cartValuePts: 0,
+        intentPts: 0,
+        recencyPts: 0,
+      },
+      reasons: [
+        reasonText,
+        `Historical profile: ${customer.intent} intent · ${customer.previousOrders} prior ${
+          customer.previousOrders === 1 ? 'order' : 'orders'
+        }.`,
+      ],
+      recommendedAction: 'Send post-purchase skincare regimen guide',
+    };
+  }
 
   // 1. Cart Value Component (0 - 35 points)
   let cartValuePts = 0;
@@ -59,7 +109,7 @@ export function calculatePriorityScore(
     cartValuePts = 22;
   } else if (cartValue >= 1200) {
     cartValuePts = 15;
-  } else if (cartValue > 0) {
+  } else {
     cartValuePts = 9;
   }
 
@@ -82,79 +132,109 @@ export function calculatePriorityScore(
   if (customer.previousOrders >= 1) {
     intentPts += 4;
   }
-  intentPts = Math.min(40, intentPts);
+  intentPts = Math.min(SCORE_COMPONENT_MAX.INTENT_AND_DEPTH, intentPts);
 
   // 3. Abandonment Window Recency Component (0 - 25 points)
-  // Peak recovery responsiveness happens within 1–12 hours of abandonment.
   let recencyPts = 0;
   if (abandonedHours === null) {
-    recencyPts = customer.purchaseStatus === 'Converted' ? 6 : 10;
-  } else if (abandonedHours <= 4) {
-    recencyPts = 25;
-  } else if (abandonedHours <= 12) {
-    recencyPts = 21;
-  } else if (abandonedHours <= 24) {
-    recencyPts = 16;
-  } else if (abandonedHours <= 48) {
-    recencyPts = 11;
+    recencyPts = 10;
   } else {
-    recencyPts = 6;
-  }
-
-  const rawScore = cartValuePts + intentPts + recencyPts;
-  const score = Math.max(0, Math.min(100, rawScore));
-
-  let level: PriorityLevel = 'Low';
-  if (score >= 72) {
-    level = 'High';
-  } else if (score >= 46) {
-    level = 'Medium';
-  }
-
-  // Construct transparent, human-readable scoring reasons
-  const reasons: string[] = [];
-
-  if (cartValue >= 3000) {
-    reasons.push(`High basket value (₹${cartValue.toLocaleString('en-IN')}) qualifies for top revenue impact.`);
-  } else if (cartValue >= 1500) {
-    reasons.push(`Moderate basket value (₹${cartValue.toLocaleString('en-IN')}) above typical single-SKU order.`);
-  } else if (cartValue > 0) {
-    reasons.push(`Entry basket value (₹${cartValue.toLocaleString('en-IN')}) carries lower margin headroom.`);
-  } else {
-    reasons.push('No active unrecovered basket currently open.');
-  }
-
-  if (customer.checkoutStepReached === 'Payment Page') {
-    reasons.push('Dropped at Payment Page after completing shipping details.');
-  } else if (customer.checkoutStepReached === 'Shipping Details') {
-    reasons.push('Entered delivery address before leaving checkout.');
-  } else if (customer.intent === 'High') {
-    reasons.push(`${customer.sessionsLast7Days} storefront sessions and ${customer.productViewsLast7Days} product views this week.`);
-  } else if (customer.intent === 'Medium') {
-    reasons.push(`Moderate engagement (${customer.sessionsLast7Days} sessions in 7 days) without payment initiation.`);
-  } else {
-    reasons.push('Early browsing behaviour with limited checkout commitment.');
-  }
-
-  if (abandonedHours !== null) {
-    if (abandonedHours <= 12) {
-      reasons.push(`Abandoned ${formatAbandonmentDuration(abandonedHours)} — still inside the optimal 12-hour recall window.`);
-    } else if (abandonedHours <= 36) {
-      reasons.push(`Abandoned ${formatAbandonmentDuration(abandonedHours)} — requires timely reminder before intent decays.`);
+    const safeHours = Math.max(0, abandonedHours);
+    if (safeHours <= 4) {
+      recencyPts = 25;
+    } else if (safeHours <= 12) {
+      recencyPts = 21;
+    } else if (safeHours <= 24) {
+      recencyPts = 16;
+    } else if (safeHours <= 48) {
+      recencyPts = 11;
     } else {
-      reasons.push(`Abandoned ${formatAbandonmentDuration(abandonedHours)} — older cart may need an incentive or routine tip.`);
+      recencyPts = 6;
     }
   }
 
-  if (customer.previousOrders > 0) {
-    reasons.push(`Repeat buyer (${customer.previousOrders} prior ${customer.previousOrders === 1 ? 'order' : 'orders'}) with established brand trust.`);
+  const score = Math.max(0, Math.min(100, cartValuePts + intentPts + recencyPts));
+
+  let level: PriorityLevel = 'Low';
+  if (score >= PRIORITY_THRESHOLDS.HIGH) {
+    level = 'High';
+  } else if (score >= PRIORITY_THRESHOLDS.MEDIUM) {
+    level = 'Medium';
+  }
+
+  // Construct transparent explanations matching exact component thresholds
+  const reasons: string[] = [];
+
+  if (cartValue >= 4500) {
+    reasons.push(
+      `Top-tier basket value (₹${cartValue.toLocaleString('en-IN')}, ≥ ₹4,500) contributes ${cartValuePts}/35 pts.`
+    );
+  } else if (cartValue >= 3000) {
+    reasons.push(
+      `High basket value (₹${cartValue.toLocaleString('en-IN')}, ₹3,000–₹4,499 tier) contributes ${cartValuePts}/35 pts.`
+    );
+  } else if (cartValue >= 2000) {
+    reasons.push(
+      `Mid-high basket value (₹${cartValue.toLocaleString('en-IN')}, ₹2,000–₹2,999 tier) contributes ${cartValuePts}/35 pts.`
+    );
+  } else if (cartValue >= 1200) {
+    reasons.push(
+      `Standard basket value (₹${cartValue.toLocaleString('en-IN')}, ₹1,200–₹1,999 tier) contributes ${cartValuePts}/35 pts.`
+    );
+  } else {
+    reasons.push(
+      `Entry basket value (₹${cartValue.toLocaleString('en-IN')}, < ₹1,200 tier) contributes ${cartValuePts}/35 pts.`
+    );
+  }
+
+  const stepDetail =
+    customer.checkoutStepReached === 'Payment Page'
+      ? 'dropped at Payment Page (+8)'
+      : customer.checkoutStepReached === 'Shipping Details'
+      ? 'entered Shipping Details (+5)'
+      : customer.checkoutStepReached === 'Cart Review'
+      ? 'reached Cart Review (+2)'
+      : 'browsed Product Page (+0)';
+  const repeatDetail =
+    customer.previousOrders >= 1
+      ? ` and repeat buyer (${customer.previousOrders} prior ${
+          customer.previousOrders === 1 ? 'order' : 'orders'
+        }, +4)`
+      : '';
+  reasons.push(
+    `${customer.intent} purchase intent, ${stepDetail}${repeatDetail} contributes ${intentPts}/40 pts.`
+  );
+
+  if (abandonedHours === null) {
+    reasons.push(`No timestamped abandonment window recorded (${recencyPts}/25 pts).`);
+  } else {
+    const safeHours = Math.max(0, abandonedHours);
+    if (safeHours <= 4) {
+      reasons.push(
+        `Abandoned ${formatAbandonmentDuration(safeHours)} (≤ 4h peak window) contributes ${recencyPts}/25 pts.`
+      );
+    } else if (safeHours <= 12) {
+      reasons.push(
+        `Abandoned ${formatAbandonmentDuration(safeHours)} (≤ 12h optimal window) contributes ${recencyPts}/25 pts.`
+      );
+    } else if (safeHours <= 24) {
+      reasons.push(
+        `Abandoned ${formatAbandonmentDuration(safeHours)} (≤ 24h follow-up window) contributes ${recencyPts}/25 pts.`
+      );
+    } else if (safeHours <= 48) {
+      reasons.push(
+        `Abandoned ${formatAbandonmentDuration(safeHours)} (24–48h decay window) contributes ${recencyPts}/25 pts.`
+      );
+    } else {
+      reasons.push(
+        `Abandoned ${formatAbandonmentDuration(safeHours)} (> 48h aged window) contributes ${recencyPts}/25 pts.`
+      );
+    }
   }
 
   // Recommended next action
-  let recommendedAction = 'Monitor passive storefront activity';
-  if (customer.purchaseStatus === 'Converted' || customer.purchaseStatus === 'Recovered') {
-    recommendedAction = 'Send post-purchase skincare regimen guide';
-  } else if (level === 'High' && customer.checkoutStepReached === 'Payment Page') {
+  let recommendedAction = 'Queue low-touch educational email digest';
+  if (level === 'High' && customer.checkoutStepReached === 'Payment Page') {
     recommendedAction = 'Send instant checkout-resume link via WhatsApp with free express shipping';
   } else if (level === 'High') {
     recommendedAction = 'Draft personalised concierge follow-up highlighting key active ingredients';
@@ -162,8 +242,6 @@ export function calculatePriorityScore(
     recommendedAction = 'Offer 10% welcome/return incentive via Email';
   } else if (level === 'Medium') {
     recommendedAction = 'Send gentle cart reminder with regimen pairing advice';
-  } else {
-    recommendedAction = 'Queue low-touch educational email digest';
   }
 
   return {

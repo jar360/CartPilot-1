@@ -18,6 +18,7 @@ interface CustomersViewProps {
   customers: Customer[];
   carts: AbandonedCart[];
   globalSearch: string;
+  onClearGlobalSearch: () => void;
   onSelectCustomer: (customerId: string) => void;
 }
 
@@ -27,6 +28,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
   customers,
   carts,
   globalSearch,
+  onClearGlobalSearch,
   onSelectCustomer,
 }) => {
   const [localSearch, setLocalSearch] = useState('');
@@ -90,6 +92,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
 
   const clearFilters = () => {
     setLocalSearch('');
+    onClearGlobalSearch();
     setStatusFilter('All');
     setIntentFilter('All');
   };

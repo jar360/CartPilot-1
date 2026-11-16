@@ -94,6 +94,12 @@ export default function App() {
     return items;
   }, [carts, customers, readNotificationIds]);
 
+  const handleMarkNotificationRead = (notificationId: string) => {
+    setReadNotificationIds((prev) =>
+      prev.includes(notificationId) ? prev : [...prev, notificationId]
+    );
+  };
+
   const handleMarkAllNotificationsRead = () => {
     setReadNotificationIds(notifications.map((n) => n.id));
   };
@@ -117,11 +123,19 @@ export default function App() {
     );
 
     if (interactionSummary || customerStatusUpdate) {
-      const timeDisplay = new Date().toLocaleTimeString('en-IN', {
+      const now = new Date();
+      const istParts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
         hour12: false,
-      });
+      }).formatToParts(now);
+      const getPart = (type: string) => istParts.find((p) => p.type === type)?.value ?? '00';
+      const formattedTimestamp = `${getPart('year')}-${getPart('month')}-${getPart('day')} ${getPart('hour')}:${getPart('minute')} IST`;
+
       setCustomers((prev) =>
         prev.map((cust) => {
           if (cust.id !== targetCart.customerId) return cust;
@@ -129,7 +143,7 @@ export default function App() {
             ? [
                 {
                   id: `INT-${Date.now()}`,
-                  timestamp: `Today ${timeDisplay} IST`,
+                  timestamp: formattedTimestamp,
                   channel: 'System Review' as const,
                   summary: interactionSummary,
                   outcome: updates.recoveryStatus ?? targetCart.recoveryStatus,
@@ -232,6 +246,7 @@ export default function App() {
           customers={customers}
           carts={carts}
           notifications={notifications}
+          onMarkNotificationRead={handleMarkNotificationRead}
           onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
           onSelectCustomer={(id) => {
             setSelectedCartId(null);
@@ -269,6 +284,7 @@ export default function App() {
               customers={customers}
               carts={carts}
               globalSearch={searchQuery}
+              onClearGlobalSearch={() => setSearchQuery('')}
               onSelectCustomer={(id) => {
                 setSelectedCartId(null);
                 setSelectedCustomerId(id);
@@ -296,6 +312,7 @@ export default function App() {
               carts={carts}
               customers={customers}
               globalSearch={searchQuery}
+              onClearGlobalSearch={() => setSearchQuery('')}
               onSelectCart={(id) => {
                 setSelectedCustomerId(null);
                 setSelectedCartId(id);
