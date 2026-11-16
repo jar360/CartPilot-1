@@ -1,0 +1,156 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PurchaseStatus {
+  Abandoned
+  AtCheckout
+  Recovered
+  Converted
+}
+
+enum PurchaseIntent {
+  High
+  Medium
+  Low
+}
+
+enum RecoveryStatus {
+  Pending
+  MessageGenerated
+  AwaitingApproval
+  Approved
+  Recovered
+}
+
+enum MessageChannel {
+  Email
+  WhatsApp
+}
+
+enum MessageTone {
+  WarmReminder
+  GentleIncentive
+  VIPConcierge
+}
+
+enum CartItemCategory {
+  Serums
+  Moisturizers
+  Cleansers
+  SunCare
+  Treatments
+}
+
+enum InteractionChannel {
+  WebStore
+  Email
+  WhatsApp
+  SystemReview
+}
+
+model Customer {
+  id                    String              @id
+  name                  String
+  email                 String              @unique
+  phone                 String
+  city                  String
+  skinProfile           String
+  purchaseStatus        PurchaseStatus
+  intent                PurchaseIntent
+  lastActivityAt        DateTime
+  sessionsLast7Days     Int                 @default(0)
+  productViewsLast7Days Int                 @default(0)
+  previousOrders        Int                 @default(0)
+  lifetimeValueInr      Int                 @default(0)
+  checkoutStepReached   String
+  abandonedHoursAgo     Float?
+  carts                 Cart[]
+  interactions          CustomerInteraction[]
+  activityEvents        ActivityEvent[]
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@index([purchaseStatus, intent])
+}
+
+model Cart {
+  id                String         @id
+  customerId        String
+  customer          Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  abandonedAt       DateTime
+  abandonedHoursAgo Float
+  recoveryStatus    RecoveryStatus @default(Pending)
+  channel           MessageChannel @default(Email)
+  tone              MessageTone    @default(WarmReminder)
+  generatedSubject  String?
+  generatedMessage  String?
+  lastActionNote    String?
+  items             CartItem[]
+  messages          RecoveryMessage[]
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([customerId])
+  @@index([recoveryStatus, abandonedAt])
+}
+
+model CartItem {
+  id             String           @id @default(cuid())
+  cartId         String
+  cart           Cart             @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  sku            String
+  name           String
+  category       CartItemCategory
+  variant        String
+  unitPriceInr   Int
+  quantity       Int
+
+  @@index([cartId])
+}
+
+model CustomerInteraction {
+  id         String             @id
+  customerId String
+  customer   Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  timestamp  DateTime
+  channel    InteractionChannel
+  summary    String
+  outcome    String?
+  createdAt  DateTime           @default(now())
+
+  @@index([customerId, timestamp])
+}
+
+model ActivityEvent {
+  id         String   @id
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  timestamp  DateTime
+  event      String
+  detail     String
+
+  @@index([customerId, timestamp])
+}
+
+model RecoveryMessage {
+  id          String         @id @default(cuid())
+  cartId      String
+  cart        Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  channel     MessageChannel
+  tone        MessageTone
+  subject     String?
+  body        String
+  provider    String
+  status      String         @default("Draft")
+  approvedAt  DateTime?
+  sentAt      DateTime?
+  createdAt   DateTime       @default(now())
+
+  @@index([cartId, createdAt])
+}
