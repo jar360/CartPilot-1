@@ -1,0 +1,6 @@
+{
+  "name": "CartPilot",
+  "description": "Customer intelligence and abandoned-cart recovery platform for growing D2C e-commerce businesses.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
