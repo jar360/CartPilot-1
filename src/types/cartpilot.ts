@@ -51,6 +51,7 @@ export interface ActivityEvent {
   timestamp: string;
   event: string;
   detail: string;
+  eventType: string;
 }
 
 export interface Customer {

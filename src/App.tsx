@@ -24,11 +24,13 @@ import { CartRecoveryView } from './components/views/CartRecoveryView';
 import { AnalyticsView } from './components/views/AnalyticsView';
 import { CustomerProfileDrawer } from './components/drawers/CustomerProfileDrawer';
 import { CartDetailDrawer } from './components/drawers/CartDetailDrawer';
-
+import { fetchCustomers, fetchCarts } from './services/api';
 export default function App() {
   const [initialState] = useState(() => loadPersistedState());
   const [customers, setCustomers] = useState<Customer[]>(initialState.customers);
   const [carts, setCarts] = useState<AbandonedCart[]>(initialState.carts);
+  const [isLoading, setIsLoading] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>(
     initialState.readNotificationIds
   );
@@ -39,7 +41,46 @@ export default function App() {
 
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [selectedCartId, setSelectedCartId] = useState<string | null>(null);
+  useEffect(() => {
+  let isMounted = true;
 
+  async function loadApiData() {
+    try {
+      setIsLoading(true);
+      setApiError(null);
+
+      const [customerData, cartData] = await Promise.all([
+        fetchCustomers(),
+        fetchCarts(),
+      ]);
+
+      if (isMounted) {
+        setCustomers(customerData);
+        setCarts(cartData);
+      }
+    } catch (error) {
+      console.error('Failed to load API data:', error);
+
+      if (isMounted) {
+        setApiError(
+          error instanceof Error
+            ? error.message
+            : 'Unable to load data from the server'
+        );
+      }
+    } finally {
+      if (isMounted) {
+        setIsLoading(false);
+      }
+    }
+  }
+
+  loadApiData();
+
+  return () => {
+    isMounted = false;
+  };
+}, []);
   useEffect(() => {
     savePersistedState({
       customers,

@@ -53,6 +53,18 @@ enum InteractionChannel {
   WhatsApp
   SystemReview
 }
+enum ActivityEventType {
+  CHECKOUT_ABANDONED
+  PRODUCT_VIEWED
+  PRODUCT_COMPARED
+  CART_UPDATED
+  CART_VIEWED
+  PROMO_CODE_ATTEMPTED
+  SHIPPING_CHECKED
+  ADDRESS_UPDATED
+  ORDER_RECOVERED
+  ORDER_COMPLETED
+}
 
 model Customer {
   id                    String              @id
@@ -128,14 +140,16 @@ model CustomerInteraction {
 }
 
 model ActivityEvent {
-  id         String   @id
+  id         String            @id
   customerId String
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer   Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)
   timestamp  DateTime
+  eventType  ActivityEventType
   event      String
   detail     String
 
   @@index([customerId, timestamp])
+  @@index([eventType, timestamp])
 }
 
 model RecoveryMessage {

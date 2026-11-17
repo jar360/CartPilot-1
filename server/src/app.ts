@@ -2,7 +2,8 @@ import cors from 'cors';
 import express from 'express';
 import { env } from './config/env.js';
 import { healthRouter } from './routes/health.routes.js';
-
+import { customersRouter } from './routes/customers.routes.js';
+import { cartsRouter } from './routes/carts.routes.js';
 export const app = express();
 
 app.disable('x-powered-by');
@@ -14,6 +15,8 @@ app.get('/api', (_req, res) => {
 });
 
 app.use('/api/health', healthRouter);
+app.use('/api/customers', customersRouter);
+app.use('/api/carts', cartsRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Route not found' } });

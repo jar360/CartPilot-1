@@ -147,8 +147,8 @@ export function computeDashboardMetrics(
   });
 
   const highPriorityCustomersCount = customerScores.filter(
-    (entry) => entry.breakdown.level === 'High'
-  ).length;
+  (entry) => entry.isActiveOpen && entry.breakdown.level === 'High'
+).length;
 
   const activeOpenScores = customerScores.filter((entry) => entry.isActiveOpen);
   const meanActivePriorityScore =
